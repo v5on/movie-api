@@ -176,6 +176,72 @@ async def get_final_download_links(url: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/src")
+async def search_and_get_all_links(query: str):
+    """Combined endpoint to search for a movie and get all download links."""
+    try:
+        # Step 1: Search for movies
+        search_response = await search_movies(query)
+        search_results = search_response.get("results", [])
+
+        if not search_results:
+            return {
+                "ok": True,
+                "developer": "Tofazzal Hossain",
+                "results": []
+            }
+
+        final_results = []
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            for movie in search_results:
+                movie_url = movie.get("url")
+                if not movie_url:
+                    continue
+
+                try:
+                    # Step 2: Get the final download page URL
+                    download_page_info = await get_download_links(movie_url)
+                    final_page_url = download_page_info.get("final_page_url")
+
+                    if not final_page_url:
+                        continue
+
+                    # Step 3: Get the final download links
+                    final_links_by_quality = await get_final_download_links(final_page_url)
+
+                    # Format the links as requested
+                    download_links_formatted = []
+                    for quality, links_list in final_links_by_quality.items():
+                        urls = [link["url"] for link in links_list]
+                        download_links_formatted.append({
+                            "quality": quality,
+                            "links": urls
+                        })
+                    
+                    # Combine all information
+                    final_results.append({
+                        "title": movie.get("title"),
+                        "year": movie.get("year"),
+                        "type": movie.get("type"),
+                        "poster": movie.get("thumbnail"),
+                        "downloadLink": download_links_formatted
+                    })
+
+                except HTTPException as e:
+                    # If one movie fails, print an error and continue with the next
+                    print(f"Failed to process movie '{movie.get('title')}': {e.detail}")
+                    continue
+        
+        return {
+            "ok": True,
+            "developer": "Mahir Labib",
+            "results": final_results
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
